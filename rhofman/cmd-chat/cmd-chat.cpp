@@ -54,9 +54,9 @@ void ThreadMessagesReceiveAndPrint()
         return;
     }
 
+    sockaddr_in address = CreateReceiveAddress();
     while (true)
     {
-        sockaddr_in address = CreateReceiveAddress();
 
         std::string input;
         if (!SocketUDPReceiveMessage(socketReceive, address, input))
