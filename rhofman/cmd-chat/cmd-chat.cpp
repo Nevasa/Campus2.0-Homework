@@ -1,58 +1,169 @@
-#include "winsock2.h"
-#include <iostream>
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 
+#include "winsock2.h"
 #pragma comment(lib, "Ws2_32.lib")
+
+#include <iostream>
+#include <string>
 
 #define PORT 27015
 
+bool Initialize();
+bool Deinitialize();
+
+bool SocketUDPCreate(SOCKET& socketData);
+bool SocketUDPSetBroadcastOption(SOCKET& socketData);
+bool SocketUDPSendMessage(SOCKET& socket, const std::string& message, const sockaddr_in& address);
+
+sockaddr_in CreateBroadcastAddress();
+sockaddr_in CreateReceiveAddress();
+
+std::string ReadUserInput();
+
 int main()
 {
-    WSADATA wsaData;
-    int error = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (error != 0)
+    if (!Initialize())
     {
-        std::cout << "Networking lib cannot be initialized\n";
-        std::cout << "Error code: " << error << '\n';
         return -1;
     }
 
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == INVALID_SOCKET)
+    SOCKET socketData;
+    if (!SocketUDPCreate(socketData))
     {
-        std::cout << "Unable to create socket\n";
-        std::cout << "Error code: " << WSAGetLastError() << '\n';
         return -1;
     }
 
-    char broadcast = '1';
-
-    if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) == SOCKET_ERROR)
+    if (!SocketUDPSetBroadcastOption(socketData))
     {
-        std::cout << "Unable to set socket parameters\n";
+        return -1;
+    }
+
+    sockaddr_in addressBroadcast = CreateBroadcastAddress();
+
+    const std::string message = ReadUserInput();
+    if (!SocketUDPSendMessage(socketData, message, addressBroadcast))
+    {
+        return -1;
+    }
+
+
+
+    sockaddr_in addressReceive = CreateReceiveAddress();
+    if (bind(socketData, (sockaddr*)& addressReceive, sizeof(addressReceive)) < 0)
+    {
+        std::cout << "Unable to bind receive socket\n";
         std::cout << "Error code: " << WSAGetLastError() << '\n';
-        closesocket(sock);
+        closesocket(socketData);
         return -1;
     }
 
     int len = sizeof(struct sockaddr_in);
-
-    sockaddr_in addressReceiver;
-    addressReceiver.sin_family = AF_INET;
-    addressReceiver.sin_port = htons(PORT);
-    addressReceiver.sin_addr.s_addr  = INADDR_BROADCAST;
-
-    char message[] = "Broadcast message from SLAVE TAG";
-    sendto(sock, message, strlen(message) + 1, 0, (sockaddr*)& addressReceiver, sizeof(addressReceiver));
-
     char buffer[50] = "";
     int bufferSize = 50;
-    recvfrom(sock, buffer, bufferSize, 0, (sockaddr*)& addressReceiver, &len);
+    recvfrom(socketData, buffer, bufferSize, 0, (sockaddr*)& addressReceive, &len);
 
     std::cout << "\n\n\tReceived message from Reader is =>  " << buffer;
 
     std::cout << "\n\n\tpress any key to CONT...";
     getchar();
 
-    closesocket(sock);
-    WSACleanup();
+    closesocket(socketData);
+
+    if (!Deinitialize())
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+bool Initialize()
+{
+    WSADATA wsaData;
+    const int error = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (error != 0)
+    {
+        std::cout << "Networking lib cannot be initialized\n";
+        std::cout << "Error code: " << error << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool Deinitialize()
+{
+    if (WSACleanup() == SOCKET_ERROR)
+    {
+        std::cout << "Networking lib cannot be deinitialized\n";
+        std::cout << "Error code: " << WSAGetLastError() << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool SocketUDPCreate(SOCKET& socketData)
+{
+    socketData = socket(AF_INET, SOCK_DGRAM, 0);
+    if (socketData == INVALID_SOCKET)
+    {
+        std::cout << "Unable to create socket\n";
+        std::cout << "Error code: " << WSAGetLastError() << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool SocketUDPSetBroadcastOption(SOCKET& socketData)
+{
+    const char broadcast = '1';
+    if (setsockopt(socketData, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) == SOCKET_ERROR)
+    {
+        std::cout << "Unable to set socket parameters\n";
+        std::cout << "Error code: " << WSAGetLastError() << '\n';
+        closesocket(socketData);
+        return false;
+    }
+    return true;
+}
+
+bool SocketUDPSendMessage(SOCKET& socket, const std::string& message, const sockaddr_in& address)
+{
+    const int messageSize = static_cast<int>(message.size()) + 1;
+    const sockaddr* addressData = reinterpret_cast<const sockaddr*>(&address);
+    if (sendto(socket, message.c_str(), messageSize, 0, addressData, sizeof(address)) == SOCKET_ERROR)
+    {
+        std::cout << "Cannot send message\n";
+        std::cout << "Error code: " << WSAGetLastError() << '\n';
+        return false;
+    }
+    return true;
+}
+
+sockaddr_in CreateBroadcastAddress()
+{
+    sockaddr_in addressReceiver;
+    addressReceiver.sin_family = AF_INET;
+    addressReceiver.sin_port = htons(PORT);
+    addressReceiver.sin_addr.s_addr = INADDR_BROADCAST;
+
+    return addressReceiver;
+}
+
+sockaddr_in CreateReceiveAddress()
+{
+    sockaddr_in addressReceiver;
+    addressReceiver.sin_family = AF_INET;
+    addressReceiver.sin_port = htons(PORT);
+    addressReceiver.sin_addr.s_addr = INADDR_ANY;
+
+    return addressReceiver;
+}
+
+std::string ReadUserInput()
+{
+    std::cout << "Enter message to send:\n";
+    std::string input;
+    std::getline(std::cin, input);
+
+    return input;
 }
