@@ -7,13 +7,21 @@
 #include <string>
 
 #define PORT 27015
+#define BUFFER_SIZE 256
+
+const sockaddr* ToSockaddr(const sockaddr_in& address);
+sockaddr* ToSockaddr(sockaddr_in& address);
 
 bool Initialize();
 bool Deinitialize();
 
 bool SocketUDPCreate(SOCKET& socketData);
 bool SocketUDPSetBroadcastOption(SOCKET& socketData);
-bool SocketUDPSendMessage(SOCKET& socket, const std::string& message, const sockaddr_in& address);
+bool SocketUDPBindToReceive(SOCKET& socket, const sockaddr_in& address);
+
+bool SocketUDPSendMessage(SOCKET& socket, const sockaddr_in& address, const std::string& message);
+bool SocketUDPReceiveMessage(SOCKET& socket, sockaddr_in& address, std::string& message);
+
 
 sockaddr_in CreateBroadcastAddress();
 sockaddr_in CreateReceiveAddress();
@@ -28,21 +36,18 @@ int main()
     }
 
     SOCKET socketSend;
-    if (!SocketUDPCreate(socketSend))
+    if (!SocketUDPCreate(socketSend) || !SocketUDPSetBroadcastOption(socketSend))
     {
-        return -1;
-    }
-
-    if (!SocketUDPSetBroadcastOption(socketSend))
-    {
+        closesocket(socketSend);
         return -1;
     }
 
     sockaddr_in addressBroadcast = CreateBroadcastAddress();
 
     const std::string message = ReadUserInput();
-    if (!SocketUDPSendMessage(socketSend, message, addressBroadcast))
+    if (!SocketUDPSendMessage(socketSend, addressBroadcast, message))
     {
+        closesocket(socketSend);
         return -1;
     }
 
@@ -52,32 +57,27 @@ int main()
 
 
     SOCKET socketReceive;
-    if (!SocketUDPCreate(socketReceive))
+    if (!SocketUDPCreate(socketReceive) || !SocketUDPSetBroadcastOption(socketSend))
     {
+        closesocket(socketReceive);
         return -1;
     }
 
     sockaddr_in addressReceive = CreateReceiveAddress();
-    if (bind(socketReceive, (sockaddr*)& addressReceive, sizeof(addressReceive)) < 0)
+    if (!SocketUDPBindToReceive(socketReceive, addressReceive))
     {
-        std::cout << "Unable to bind receive socket\n";
-        std::cout << "Error code: " << WSAGetLastError() << '\n';
         closesocket(socketReceive);
         return -1;
     }
 
-    int len = sizeof(struct sockaddr_in);
-    char buffer[50] = "";
-    int bufferSize = 50;
-    if (recvfrom(socketReceive, buffer, bufferSize, 0, (sockaddr*)& addressReceive, &len) == SOCKET_ERROR)
+    std::string input;
+    if (!SocketUDPReceiveMessage(socketReceive, addressReceive, input))
     {
-        std::cout << "Unable receive messages\n";
-        std::cout << "Error code: " << WSAGetLastError() << '\n';
         closesocket(socketReceive);
         return -1;
     }
 
-    std::cout << "\n\n\tReceived message from Reader is =>  " << buffer;
+    std::cout << "\n\n\tReceived message from Reader is =>  " << input;
 
     std::cout << "\n\n\tpress any key to CONT...";
     getchar();
@@ -93,6 +93,16 @@ int main()
     }
 
     return 0;
+}
+
+const sockaddr* ToSockaddr(const sockaddr_in& address)
+{
+    return reinterpret_cast<const sockaddr*>(&address);
+}
+
+sockaddr* ToSockaddr(sockaddr_in& address)
+{
+    return reinterpret_cast<sockaddr*>(&address);
 }
 
 bool Initialize()
@@ -138,19 +148,47 @@ bool SocketUDPSetBroadcastOption(SOCKET& socketData)
     {
         std::cout << "Unable to set socket parameters\n";
         std::cout << "Error code: " << WSAGetLastError() << '\n';
-        closesocket(socketData);
         return false;
     }
     return true;
 }
 
-bool SocketUDPSendMessage(SOCKET& socket, const std::string& message, const sockaddr_in& address)
+bool SocketUDPSendMessage(SOCKET& socket, const sockaddr_in& address, const std::string& message)
 {
     const int messageSize = static_cast<int>(message.size()) + 1;
-    const sockaddr* addressData = reinterpret_cast<const sockaddr*>(&address);
+    const sockaddr* addressData = ToSockaddr(address);
     if (sendto(socket, message.c_str(), messageSize, 0, addressData, sizeof(address)) == SOCKET_ERROR)
     {
         std::cout << "Cannot send message\n";
+        std::cout << "Error code: " << WSAGetLastError() << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool SocketUDPReceiveMessage(SOCKET& socket, sockaddr_in& address, std::string& message)
+{
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+
+    int structSize = sizeof(sockaddr_in);
+    sockaddr* addressData = ToSockaddr(address);
+    if (recvfrom(socket, buffer, BUFFER_SIZE, 0, addressData, &structSize) == SOCKET_ERROR)
+    {
+        std::cout << "Unable receive messages\n";
+        std::cout << "Error code: " << WSAGetLastError() << '\n';
+        return false;
+    }
+
+    message = buffer;
+    return true;
+}
+
+bool SocketUDPBindToReceive(SOCKET& socket, const sockaddr_in& address)
+{
+    if (bind(socket, (sockaddr*)& address, sizeof(address)) < 0)
+    {
+        std::cout << "Unable to bind receive socket\n";
         std::cout << "Error code: " << WSAGetLastError() << '\n';
         return false;
     }
