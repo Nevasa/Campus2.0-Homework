@@ -27,13 +27,13 @@ int main()
         return -1;
     }
 
-    SOCKET socketData;
-    if (!SocketUDPCreate(socketData))
+    SOCKET socketSend;
+    if (!SocketUDPCreate(socketSend))
     {
         return -1;
     }
 
-    if (!SocketUDPSetBroadcastOption(socketData))
+    if (!SocketUDPSetBroadcastOption(socketSend))
     {
         return -1;
     }
@@ -41,33 +41,51 @@ int main()
     sockaddr_in addressBroadcast = CreateBroadcastAddress();
 
     const std::string message = ReadUserInput();
-    if (!SocketUDPSendMessage(socketData, message, addressBroadcast))
+    if (!SocketUDPSendMessage(socketSend, message, addressBroadcast))
     {
         return -1;
     }
 
 
 
+
+
+
+    SOCKET socketReceive;
+    if (!SocketUDPCreate(socketReceive))
+    {
+        return -1;
+    }
+
     sockaddr_in addressReceive = CreateReceiveAddress();
-    if (bind(socketData, (sockaddr*)& addressReceive, sizeof(addressReceive)) < 0)
+    if (bind(socketReceive, (sockaddr*)& addressReceive, sizeof(addressReceive)) < 0)
     {
         std::cout << "Unable to bind receive socket\n";
         std::cout << "Error code: " << WSAGetLastError() << '\n';
-        closesocket(socketData);
+        closesocket(socketReceive);
         return -1;
     }
 
     int len = sizeof(struct sockaddr_in);
     char buffer[50] = "";
     int bufferSize = 50;
-    recvfrom(socketData, buffer, bufferSize, 0, (sockaddr*)& addressReceive, &len);
+    if (recvfrom(socketReceive, buffer, bufferSize, 0, (sockaddr*)& addressReceive, &len) == SOCKET_ERROR)
+    {
+        std::cout << "Unable receive messages\n";
+        std::cout << "Error code: " << WSAGetLastError() << '\n';
+        closesocket(socketReceive);
+        return -1;
+    }
 
     std::cout << "\n\n\tReceived message from Reader is =>  " << buffer;
 
     std::cout << "\n\n\tpress any key to CONT...";
     getchar();
 
-    closesocket(socketData);
+
+    closesocket(socketSend);
+    closesocket(socketReceive);
+
 
     if (!Deinitialize())
     {
@@ -103,7 +121,7 @@ bool Deinitialize()
 
 bool SocketUDPCreate(SOCKET& socketData)
 {
-    socketData = socket(AF_INET, SOCK_DGRAM, 0);
+    socketData = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (socketData == INVALID_SOCKET)
     {
         std::cout << "Unable to create socket\n";
