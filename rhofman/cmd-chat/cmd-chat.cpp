@@ -9,8 +9,13 @@
 
 #include <iostream>
 #include <string>
+#include <thread>
+
+void ThreadMessagesReceiveAndPrint();
+void ThreadMessagesReadAndSend();
 
 std::string ReadUserInput();
+
 
 int main()
 {
@@ -19,57 +24,11 @@ int main()
         return -1;
     }
 
-    SOCKET socketSend;
-    if (!SocketUDPCreate(socketSend) || !SocketUDPSetBroadcastOption(socketSend))
-    {
-        closesocket(socketSend);
-        return -1;
-    }
+    std::thread threadReceive(&ThreadMessagesReceiveAndPrint);
+    threadReceive.detach();
 
-    sockaddr_in addressBroadcast = CreateBroadcastAddress();
-
-    const std::string message = ReadUserInput();
-    if (!SocketUDPSendMessage(socketSend, addressBroadcast, message))
-    {
-        closesocket(socketSend);
-        return -1;
-    }
-
-
-
-
-
-
-    SOCKET socketReceive;
-    if (!SocketUDPCreate(socketReceive) || !SocketUDPSetBroadcastOption(socketSend))
-    {
-        closesocket(socketReceive);
-        return -1;
-    }
-
-    sockaddr_in addressReceive = CreateReceiveAddress();
-    if (!SocketUDPBindToReceive(socketReceive, addressReceive))
-    {
-        closesocket(socketReceive);
-        return -1;
-    }
-
-    std::string input;
-    if (!SocketUDPReceiveMessage(socketReceive, addressReceive, input))
-    {
-        closesocket(socketReceive);
-        return -1;
-    }
-
-    std::cout << "\n\n\tReceived message from Reader is =>  " << input;
-
-    std::cout << "\n\n\tpress any key to CONT...";
-    getchar();
-
-
-    closesocket(socketSend);
-    closesocket(socketReceive);
-
+    std::cout << "Enter " << EXIT_MESSAGE << " to close the program\n\n";
+    ThreadMessagesReadAndSend();
 
     if (!Deinitialize())
     {
@@ -79,9 +38,64 @@ int main()
     return 0;
 }
 
+void ThreadMessagesReceiveAndPrint()
+{
+    SOCKET socketReceive;
+    if (!SocketUDPCreate(socketReceive) || !SocketUDPSetBroadcastOption(socketReceive))
+    {
+        closesocket(socketReceive);
+        return;
+    }
+
+    sockaddr_in addressReceive = CreateReceiveAddress();
+    if (!SocketUDPBindToReceive(socketReceive, addressReceive))
+    {
+        closesocket(socketReceive);
+        return;
+    }
+
+    while (true)
+    {
+        sockaddr_in address = CreateReceiveAddress();
+
+        std::string input;
+        if (!SocketUDPReceiveMessage(socketReceive, address, input))
+        {
+            closesocket(socketReceive);
+            return;
+        }
+        std::cout << "\t\t\t[ >> ] " << input << "\n";
+    }
+}
+
+void ThreadMessagesReadAndSend()
+{
+    SOCKET socketSend;
+    if (!SocketUDPCreate(socketSend) || !SocketUDPSetBroadcastOption(socketSend))
+    {
+        closesocket(socketSend);
+        return;
+    }
+    sockaddr_in addressBroadcast = CreateBroadcastAddress();
+
+    while (true)
+    {
+        const std::string message = ReadUserInput();
+        if (message == EXIT_MESSAGE)
+        {
+            return;
+        }
+
+        if (!SocketUDPSendMessage(socketSend, addressBroadcast, message))
+        {
+            closesocket(socketSend);
+            return;
+        }
+    }
+}
+
 std::string ReadUserInput()
 {
-    std::cout << "Enter message to send:\n";
     std::string input;
     std::getline(std::cin, input);
 
